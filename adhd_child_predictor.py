@@ -116,15 +116,15 @@ stool_stains = st.selectbox("Has your child frequently had stool marks on their 
                             options=list(stool_stains_options.keys()), format_func=lambda x: stool_stains_options[x])
 
 # family_conflict: numerical input
-family_conflict = st.number_input("Based on the Excerpt from the Family Environment Scale (FES), what's the scores of Conflict", 
+family_conflict = st.number_input("Based on the Excerpt from the Family Environment Scale (FES), what's the scores of Conflict(-18~18)", 
                                   min_value = -18, max_value = 18, value = 0)
 
 # cshq_daysleep: numerical input
-cshq_daysleep = st.number_input("Based on the Children's Sleep Habits Questionnaire (CSHQ), what's the scores of Daytime sleepiness", 
+cshq_daysleep = st.number_input("Based on the Children's Sleep Habits Questionnaire (CSHQ), what's the scores of Daytime sleepiness(8~24)", 
                                 min_value = 8, max_value = 24, value = 8)
 
 # rutter_score_a:  numerical input
-rutter_score_a = st.number_input("Based on the parent-reported Rutter Children’s Behavior Questionnaire (RCBQ), what's the scores of Antisocial behavior (A behavior) score", 
+rutter_score_a = st.number_input("Based on the parent-reported Rutter Children’s Behavior Questionnaire (RCBQ), what's the scores of Antisocial behavior (A behavior) score(0~10)", 
                                 min_value = 0, max_value = 10, value = 0)
 
 # rutter_abnormal: categorical selection
@@ -159,7 +159,7 @@ if st.button("Predict"):
             f"The model predicts that your child's probability of having ADHD is {probability:.1f}%. "
             "While this is just an estimate, it suggests that your child may be at significant risk. "
             "I recommend that you consult a pediatric psychiatrist as soon as possible for further evaluation and "
-            "to ensure your child receive an accurate diagnosis and necessary treatment."
+            "to ensure your child receives an accurate diagnosis and necessary treatment."
         )
     else:
         advice = (
