@@ -20,66 +20,22 @@ def load_model():
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"无法加载模型文件，请确认 '{MODEL_FILE}' 在当前文件夹中。错误信息: {e}")
+    st.error(f"无法加载模型文件 '{MODEL_FILE}'，请确认文件是否存在。错误信息: {e}")
     st.stop()
 
 # ==========================================
-# 2. 选项映射字典 (严格基于您的数据定义)
+# 2. 选项映射字典
 # ==========================================
-
-# A. 学业与表现 (1-4)
-perf_options = {
-    1: 'Top few (1)',
-    2: 'Above average (2)',
-    3: 'Average (3)',
-    4: 'Below average (4)'
-}
-
-# B. 人际关系 (1-3)
-rel_options = {
-    1: 'Good (1)',
-    2: 'Average (2)',
-    3: 'Poor (3)'
-}
-
-# C. 抑郁/焦虑症状频率 (1-4)
-symptom_freq_options = {
-    1: 'Not at all (1)',
-    2: 'A little (2)',
-    3: 'Quite a bit (3)',
-    4: 'Very much (4)'
-}
-
-# D. 自杀倾向 (0-2)
-suicide_options = {
-    0: 'None (0)',
-    1: 'Suicidal thoughts (1)',
-    2: 'Suicidal behavior (2)'
-}
-
-# E. 尿失禁频率 (根据文档顺序 0-5)
-incontinence_freq_options = {
-    0: 'None',
-    1: '<1/week',
-    2: '1/week',
-    3: '2-3/week',
-    4: '4-5/week',
-    5: 'Almost every time'
-}
-
-# F. 家长焦虑程度 (0-3)
-parent_anx_options = {
-    0: 'None (Normal)',
-    1: 'Mild',
-    2: 'Moderate',
-    3: 'Severe'
-}
-
-# G. 二元选项 (0/1)
+perf_options = {1: 'Top few (1)', 2: 'Above average (2)', 3: 'Average (3)', 4: 'Below average (4)'}
+rel_options = {1: 'Good (1)', 2: 'Average (2)', 3: 'Poor (3)'}
+symptom_freq_options = {1: 'Not at all (1)', 2: 'A little (2)', 3: 'Quite a bit (3)', 4: 'Very much (4)'}
+suicide_options = {0: 'None (0)', 1: 'Suicidal thoughts (1)', 2: 'Suicidal behavior (2)'}
+incontinence_freq_options = {0: 'None', 1: '<1/week', 2: '1/week', 3: '2-3/week', 4: '4-5/week', 5: 'Almost every time'}
+parent_anx_options = {0: 'None (Normal)', 1: 'Mild', 2: 'Moderate', 3: 'Severe'}
 binary_options = {0: 'No', 1: 'Yes'}
 
 # ==========================================
-# 3. 显示名称映射 (用于界面显示)
+# 3. 显示名称映射
 # ==========================================
 feature_map_display = {
     'child_chinese': 'Chinese language performance',
@@ -106,9 +62,7 @@ st.title("ADHD Risk Assessment Tool")
 st.markdown("Please enter the information below based on the clinical assessment.")
 
 with st.form("adhd_form"):
-    
-    # --- Section 1: Demographic & School Performance ---
-    st.subheader("1. School Performance & Social (学校与社交)")
+    st.subheader("1. School Performance & Social")
     col1, col2 = st.columns(2)
     with col1:
         child_chinese = st.selectbox(feature_map_display['child_chinese'], options=list(perf_options.keys()), format_func=lambda x: perf_options[x])
@@ -116,8 +70,7 @@ with st.form("adhd_form"):
     with col2:
         child_math = st.selectbox(feature_map_display['child_math'], options=list(perf_options.keys()), format_func=lambda x: perf_options[x])
 
-    # --- Section 2: Mental Health (心理健康) ---
-    st.subheader("2. Mental Health (心理健康)")
+    st.subheader("2. Mental Health")
     col1, col2 = st.columns(2)
     with col1:
         child_depression = st.selectbox(feature_map_display['child_depression'], options=list(symptom_freq_options.keys()), format_func=lambda x: symptom_freq_options[x])
@@ -125,41 +78,35 @@ with st.form("adhd_form"):
     with col2:
         child_anxiety = st.selectbox(feature_map_display['child_anxiety'], options=list(symptom_freq_options.keys()), format_func=lambda x: symptom_freq_options[x])
 
-    # --- Section 3: Rutter Scale Scores (Rutter量表评分) ---
     st.subheader("3. Rutter Behavior Questionnaire")
     col1, col2 = st.columns(2)
     with col1:
-        rutter_score_a = st.number_input(feature_map_display['rutter_score_a'], min_value=0, max_value=30, value=0, help="Score for Antisocial behavior")
+        rutter_score_a = st.number_input(feature_map_display['rutter_score_a'], min_value=0, max_value=30, value=0)
     with col2:
-        rutter_score_n = st.number_input(feature_map_display['rutter_score_n'], min_value=0, max_value=30, value=0, help="Score for Neurotic behavior")
+        rutter_score_n = st.number_input(feature_map_display['rutter_score_n'], min_value=0, max_value=30, value=0)
 
-    # --- Section 4: Physiological & Habits (生理与习惯) ---
     st.subheader("4. Physiological & Habits")
     col1, col2, col3 = st.columns(3)
     with col1:
         urine_enuresis = st.selectbox(feature_map_display['urine_enuresis'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
         urine_leakage_frequency = st.selectbox(feature_map_display['urine_leakage_frequency'], options=list(incontinence_freq_options.keys()), format_func=lambda x: incontinence_freq_options[x])
-        urine_delayed = st.selectbox(feature_map_display['urine_delayed'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No", help="Holding maneuvers")
-    
+        urine_delayed = st.selectbox(feature_map_display['urine_delayed'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
     with col2:
         stool_stains = st.selectbox(feature_map_display['stool_stains'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
         stool_constipation = st.selectbox(feature_map_display['stool_constipation'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
-    
     with col3:
         cshq_daysleep = st.number_input(feature_map_display['cshq_daysleep'], min_value=0, max_value=50, value=8)
 
-    # --- Section 5: Caregiver Info (家长信息) ---
     st.subheader("5. Caregiver Information")
     parent_anxiety_degree = st.selectbox(feature_map_display['parent_anxiety_degree'], options=list(parent_anx_options.keys()), format_func=lambda x: parent_anx_options[x])
 
-    # 提交按钮
     submit_btn = st.form_submit_button("Run Prediction")
 
 # ==========================================
-# 5. 预测与解释逻辑 (核心部分)
+# 5. 预测与解释逻辑
 # ==========================================
 if submit_btn:
-    # 1. 构造初始数据 (顺序暂时不管，下面会自动修复)
+    # 构造数据
     input_data = pd.DataFrame({
         'rutter_score_a': [rutter_score_a],
         'urine_enuresis': [urine_enuresis],
@@ -178,47 +125,30 @@ if submit_btn:
         'stool_constipation': [stool_constipation]
     })
 
-    # --------------------------------------------------------
-    # 自动对齐：强制让输入列顺序 = 模型训练时的顺序
-    # --------------------------------------------------------
+    # --- 修复 1: 自动特征对齐 ---
     try:
         model_features = None
-        # 尝试从 Pipeline 的最后一步(随机森林)获取特征名
-        if hasattr(model, 'steps'):
-             # 通常 Pipeline 的最后一步是 estimator
-             if hasattr(model.steps[-1][1], 'feature_names_in_'):
-                 model_features = model.steps[-1][1].feature_names_in_
-        
-        # 如果 Pipeline 没有保留，或者直接是模型对象
-        if model_features is None and hasattr(model, 'feature_names_in_'):
+        if hasattr(model, 'steps') and hasattr(model.steps[-1][1], 'feature_names_in_'):
+             model_features = model.steps[-1][1].feature_names_in_
+        elif hasattr(model, 'feature_names_in_'):
             model_features = model.feature_names_in_
             
-        # 兜底：如果实在读不出来，使用之前分析出的固定列表
-        if model_features is None:
-            model_features = [
-                'rutter_score_a', 'urine_enuresis', 'child_suicide', 'rutter_score_n', 
-                'child_depression', 'parent_anxiety_degree', 'child_chinese', 'child_math', 
-                'stool_stains', 'cshq_daysleep', 'child_relationships', 'urine_leakage_frequency', 
-                'urine_delayed', 'child_anxiety', 'stool_constipation'
-            ]
+        if model_features is None: # 兜底列表
+            model_features = ['rutter_score_a', 'urine_enuresis', 'child_suicide', 'rutter_score_n', 'child_depression', 'parent_anxiety_degree', 'child_chinese', 'child_math', 'stool_stains', 'cshq_daysleep', 'child_relationships', 'urine_leakage_frequency', 'urine_delayed', 'child_anxiety', 'stool_constipation']
         
-        # 强制按照模型的顺序重排数据
         input_data = input_data[list(model_features)]
-        
     except Exception as e:
-        st.error(f"Feature alignment failed: {e}")
+        st.error(f"特征顺序对齐失败: {e}")
         st.stop()
 
     st.divider()
     
-    with st.spinner('Calculating risk score...'):
+    with st.spinner('Calculating...'):
         try:
-            # 2. 预测
-            prediction_cls = model.predict(input_data)[0]
+            # 预测
             prediction_proba = model.predict_proba(input_data)[0]
-            risk_score = prediction_proba[1] * 100  # ADHD 概率 %
+            risk_score = prediction_proba[1] * 100
 
-            # 3. 显示预测结果
             if risk_score > 50:
                 st.error(f"### High Risk Detected")
                 st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
@@ -228,50 +158,48 @@ if submit_btn:
                 st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
                 st.write("Recommendation: Routine monitoring.")
 
-            # 4. SHAP 解释图 (包含您之前的报错修复)
+            # --- 修复 2: 极度健壮的 SHAP 处理 ---
             st.subheader("Result Interpretation")
             
-            # 提取模型组件
-            preprocessor = model[:-1] # 预处理步骤
-            rf_model = model[-1]      # 随机森林模型
-
-            # 数据转换 (Raw -> Processed)
+            preprocessor = model[:-1]
+            rf_model = model[-1]
             data_processed = preprocessor.transform(input_data)
-
-            # 计算 SHAP
             explainer = shap.TreeExplainer(rf_model)
             shap_vals = explainer.shap_values(data_processed)
 
-            # 处理返回格式 (列表 vs 数组)
+            # 步骤 A: 提取目标类的 SHAP 值 (通常是第2个，代表Positive Class)
             if isinstance(shap_vals, list):
-                shap_val_target = shap_vals[1][0] # 取 Class 1
+                target_shap = shap_vals[1]
                 base_val_raw = explainer.expected_value[1]
             else:
-                shap_val_target = shap_vals[0]
+                target_shap = shap_vals
                 base_val_raw = explainer.expected_value
 
-            # 【关键修复】确保基准值是纯数字 float
+            # 步骤 B: 【核心修复】强制把数组压平成 1维 (解决 matplotlib error)
+            # 无论它是 (1, 15) 还是 (1, 15, 1)，统统变成 (15,)
+            target_shap = np.array(target_shap).squeeze()
+            if target_shap.ndim > 1: # 如果压平后还是多维(极少见), 强取第一行
+                target_shap = target_shap[0]
+
+            # 步骤 C: 确保 base_value 是纯数字 (解决 float error)
             if isinstance(base_val_raw, (np.ndarray, list)):
-                base_val = float(base_val_raw[0])
+                base_val = float(np.array(base_val_raw).item(0)) # 安全取第一个元素
             else:
                 base_val = float(base_val_raw)
 
-            # 准备显示用的 DataFrame
+            # 绘图
             display_df = input_data.rename(columns=feature_map_display)
-            
-            # 绘图：使用 explicit keyword arguments 防止报错
             shap.force_plot(
-                base_value=base_val,         # 必须是 float
-                shap_values=shap_val_target, # 必须是 array
-                features=display_df.iloc[0], # 显示数据
+                base_value=base_val,
+                shap_values=target_shap, 
+                features=display_df.iloc[0],
                 matplotlib=True,
                 show=False,
                 text_rotation=15
             )
-            
             plt.savefig("shap_force_plot.png", bbox_inches='tight', dpi=150)
             st.image("shap_force_plot.png")
 
         except Exception as e:
-            st.error(f"Prediction Error: {e}")
-            st.warning("Please ensure 'adhd_full_model.pkl' matches the input features exactly.")
+            st.error(f"发生错误: {str(e)}")
+            st.warning("建议检查: 输入特征是否与模型训练时完全一致。")
