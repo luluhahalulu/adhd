@@ -3,180 +3,250 @@ import joblib
 import numpy as np
 import pandas as pd
 import shap
-import matplotlib
 import matplotlib.pyplot as plt
 
-# Load the model
-model = joblib.load('xgboost_adhd.pkl')
+# ==========================================
+# 1. 页面配置与模型加载
+# ==========================================
+st.set_page_config(page_title="ADHD Prediction System", layout="centered")
 
-# Define feature options
+# 请确保您的 pkl 文件名为 'adhd_full_model.pkl' 并且与此脚本在同一目录下
+MODEL_FILE = 'adhd_full_model.pkl'
 
-child_chinese_options = {
-    1: 'Top few (1)',
-    2: 'Above average (2)',
-    3: 'Average (3)',
-    4: 'Below average (4)'
+@st.cache_resource
+def load_model():
+    return joblib.load(MODEL_FILE)
+
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Error loading model: {e}. Please ensure '{MODEL_FILE}' is uploaded.")
+    st.stop()
+
+# ==========================================
+# 2. 选项映射字典 (严格基于您提供的文档)
+# ==========================================
+
+# A. 学业与表现 (1-4)
+perf_options = {
+    1: 'Top few',
+    2: 'Above average',
+    3: 'Average',
+    4: 'Below average'
 }
 
-child_math_options = {
-    1: 'Top few (1)',
-    2: 'Above average (2)',
-    3: 'Average (3)',
-    4: 'Below average (4)'
+# B. 人际关系 (1-3)
+rel_options = {
+    1: 'Good',
+    2: 'Average',
+    3: 'Poor'
 }
 
-child_relationships_options = {
-    1: 'Good (1)', 
-    2: 'Average (2)', 
-    3: 'Poor (3)'
+# C. 抑郁/焦虑症状频率 (1-4)
+symptom_freq_options = {
+    1: 'Not at all',
+    2: 'A little',
+    3: 'Quite a bit',
+    4: 'Very much'
 }
 
-child_depression_options = {
-    1: 'Not at all (1)',
-    2: 'A little (2)',
-    3: 'Quite a bit (3)',
-    4: 'Very much (4)'
+# D. 自杀倾向 (0-2)
+suicide_options = {
+    0: 'None',
+    1: 'Suicidal thoughts',
+    2: 'Suicidal behavior'
 }
 
-child_anxiety_options = {
-    1: 'Not at all (1)',
-    2: 'A little (2)',
-    3: 'Quite a bit (3)',
-    4: 'Very much (4)'
+# E. 尿失禁频率 (根据文档顺序 0-5)
+# Frequency of daytime incontinence
+incontinence_freq_options = {
+    0: 'None',
+    1: '<1/week',
+    2: '1/week',
+    3: '2-3/week',
+    4: '4-5/week',
+    5: 'Almost every time around urination'
 }
 
-child_suicide_options = {
-    0: 'None (0)', 
-    1: 'Suicidal thoughts (1)', 
-    2: 'Suicidal behavior (2)'
+# F. 家长焦虑程度 (0-3)
+# 文档只列了 Mild/Moderate/Severe，这里补充 0=None 以覆盖正常情况
+parent_anx_options = {
+    0: 'None (Normal)',
+    1: 'Mild',
+    2: 'Moderate',
+    3: 'Severe'
 }
 
-urine_enuresis_options = {
-    0: 'No (0)', 
-    1: 'Yes (1)'
+# G. 二元选项 (0/1)
+binary_options = {0: 'No', 1: 'Yes'}
+
+# ==========================================
+# 3. 特征名称映射 (模型变量名 -> 显示名称)
+# ==========================================
+feature_map_display = {
+    'child_chinese': 'Chinese language performance',
+    'child_math': 'Math performance',
+    'child_relationships': 'Interpersonal relationships at school',
+    'child_depression': 'Depressive symptoms (Child)',
+    'child_anxiety': 'Anxiety symptoms (Child)',
+    'child_suicide': 'Suicidal situations',
+    'urine_enuresis': 'Enuresis (Bedwetting)',
+    'urine_leakage_frequency': 'Frequency of daytime incontinence',
+    'urine_delayed': 'Holding maneuvers (Urinary)', # 对应文档的 Holding maneuvers
+    'stool_stains': 'Encopresis',                 # 对应文档的 Encopresis
+    'stool_constipation': 'Functional constipation',
+    'cshq_daysleep': 'Daytime sleepiness (CSHQ Score)',
+    'rutter_score_a': 'Antisocial behavior score (Rutter A)',
+    'rutter_score_n': 'Neurotic behavior score (Rutter N)',
+    'parent_anxiety_degree': 'Intensity of anxiety symptoms (Caregiver)'
 }
 
-stool_stains_options = {
-    0: 'No (0)', 
-    1: 'Yes (1)'
-}
+# 提取模型所需的 15 个特征列名列表 (顺序至关重要)
+model_features = list(feature_map_display.keys())
 
-rutter_abnormal_options = {
-    1: 'No (0)', 
-    2: 'Yes (1)'
-}
+# ==========================================
+# 4. 用户输入表单
+# ==========================================
+st.title("ADHD Risk Assessment Tool")
+st.markdown("Please enter the information below based on the clinical assessment.")
 
-parent_anxiety_degree_options = {
-    0: 'None (0)', 
-    1: 'Mild (1)', 
-    2: 'Moderate (2)',
-    3: 'Severe (3)'
-}
-
-# Define feature names
-feature_names = [
-    'Chinese language performance', 'Math performance', 'Interpersonal relationships at school', 'Depressive symptoms', 
-    'Anxiety symptoms', 'Suicidal situations', 'Enuresis', 'Encopresis', 'Conflict', 
-    'Daytime sleepiness', 'Antisocial behavior score', 'Abnormal behavior', 'Intensity of anxiety symptoms'
-]
-
-# Streamlit user interface
-st.title("ADHD in Children Predictor")
-
-# child_chinese: categorical selection
-child_chinese = st.selectbox("Your child's Chinese language performance over the past six months ranks within the class:", 
-                             options=list(child_chinese_options.keys()), format_func=lambda x: child_chinese_options[x])
-
-# child_math: categorical selection
-child_math = st.selectbox("Your child's math performance over the past six months ranks within the class:", 
-                          options=list(child_math_options.keys()), format_func=lambda x: child_math_options[x])
-
-# child_relationships: categorical selection
-child_relationships = st.selectbox("Your child's interpersonal relationships with classmates at school:", 
-                                   options=list(child_relationships_options.keys()), format_func=lambda x: child_relationships_options[x])
-
-# child_depression_options: categorical selection
-child_depression = st.selectbox("The frequency of your child experiencing depressive symptoms, such as feeling down or losing interest, in the past 12 months:", 
-                                options=list(child_depression_options.keys()), format_func=lambda x: child_depression_options[x])
-
-# child_anxiety: categorical selection
-child_anxiety = st.selectbox("The frequency of your child experiencing anxiety or irritability, in the past 12 months:", 
-                             options=list(child_anxiety_options.keys()), format_func=lambda x: child_anxiety_options[x])
-
-# child_suicide: categorical selection
-child_suicide = st.selectbox("Has your child ever had suicidal behavior or suicidal thoughts in the past?", 
-                             options=list(child_suicide_options.keys()), format_func=lambda x: child_suicide_options[x])
-
-# urine_enuresis: categorical selection
-urine_enuresis = st.selectbox("Has your child ever experienced bedwetting that persisted for more than 3 months?", 
-                              options=list(urine_enuresis_options.keys()), format_func=lambda x: urine_enuresis_options[x])
-
-# stool_stains: categorical selection
-stool_stains = st.selectbox("Has your child frequently had stool marks on their underwear (excluding periods of diarrhea), after the age of 4?", 
-                            options=list(stool_stains_options.keys()), format_func=lambda x: stool_stains_options[x])
-
-# family_conflict: numerical input
-family_conflict = st.number_input("Based on the Excerpt from the Family Environment Scale (FES), what's the scores of Conflict(-18~18)", 
-                                  min_value = -18, max_value = 18, value = 0)
-
-# cshq_daysleep: numerical input
-cshq_daysleep = st.number_input("Based on the Children's Sleep Habits Questionnaire (CSHQ), what's the scores of Daytime sleepiness(8~24)", 
-                                min_value = 8, max_value = 24, value = 8)
-
-# rutter_score_a:  numerical input
-rutter_score_a = st.number_input("Based on the parent-reported Rutter Children’s Behavior Questionnaire (RCBQ), what's the scores of Antisocial behavior (A behavior) score(0~10)", 
-                                min_value = 0, max_value = 10, value = 0)
-
-# rutter_abnormal: categorical selection
-rutter_abnormal = st.selectbox("Based on the parent-reported Rutter Children’s Behavior Questionnaire (RCBQ), has your child been diagnosed with abnormal behavior?", 
-                               options=list(rutter_abnormal_options.keys()), format_func=lambda x: rutter_abnormal_options[x])
-
-# parent_anxiety_degree: categorical selection
-parent_anxiety_degree = st.selectbox("Based on the Zung Self-Rating Anxiety Scale (SAS) in caregivers, what's the intensity of anxiety symptoms", 
-                               options=list(parent_anxiety_degree_options.keys()), format_func=lambda x: parent_anxiety_degree_options[x])
-
-# Process inputs and make predictions
-feature_values = [child_chinese, child_math, child_relationships, child_depression, 
-                  child_anxiety, child_suicide, urine_enuresis, stool_stains, family_conflict, 
-                  cshq_daysleep, rutter_score_a, rutter_abnormal, parent_anxiety_degree]
-features = np.array([feature_values])
-
-if st.button("Predict"):
-    # Predict class and probabilities
-    predicted_class = model.predict(features)[0]
-    predicted_proba = model.predict_proba(features)[0]
-
-    # Display prediction results
-    st.write(f"**Predicted Class:** {predicted_class}")
-    st.write(f"**Prediction Probabilities:** {predicted_proba}")
-
-    # Generate advice based on prediction results
-    probability = predicted_proba[predicted_class] * 100
-
-    if predicted_class == 1:
-        advice = (
-            f"According to our model, your child has a high risk of ADHD. "
-            f"The model predicts that your child's probability of having ADHD is {probability:.1f}%. "
-            "While this is just an estimate, it suggests that your child may be at significant risk. "
-            "I recommend that you consult a pediatric psychiatrist as soon as possible for further evaluation and "
-            "to ensure your child receives an accurate diagnosis and necessary treatment."
-        )
-    else:
-        advice = (
-            f"According to our model, your child has a low risk of ADHD. "
-            f"The model predicts that your child's probability of not having ADHD is {probability:.1f}%. "
-            "However, paying attention to your child's mental health is still very important. "
-            "I recommend regular check-ups to monitor your child's mental health, "
-            "and to seek medical advice promptly if your child experiences any symptoms."
-        )
-
-    st.write(advice)
+with st.form("adhd_form"):
     
-    # Calculate SHAP values and display force plot
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(pd.DataFrame([feature_values], columns=feature_names))
+    # --- Section 1: Demographic & School Performance ---
+    st.subheader("1. School Performance & Social (学校与社交)")
+    col1, col2 = st.columns(2)
+    with col1:
+        child_chinese = st.selectbox(feature_map_display['child_chinese'], options=list(perf_options.keys()), format_func=lambda x: perf_options[x])
+        child_relationships = st.selectbox(feature_map_display['child_relationships'], options=list(rel_options.keys()), format_func=lambda x: rel_options[x])
+    with col2:
+        child_math = st.selectbox(feature_map_display['child_math'], options=list(perf_options.keys()), format_func=lambda x: perf_options[x])
 
-    shap.force_plot(explainer.expected_value, shap_values[0], pd.DataFrame([feature_values], columns=feature_names), matplotlib=True)
-    plt.savefig("shap_force_plot.png", bbox_inches='tight', dpi=1200)
+    # --- Section 2: Mental Health (心理健康) ---
+    st.subheader("2. Mental Health (心理健康)")
+    col1, col2 = st.columns(2)
+    with col1:
+        child_depression = st.selectbox(feature_map_display['child_depression'], options=list(symptom_freq_options.keys()), format_func=lambda x: symptom_freq_options[x])
+        child_suicide = st.selectbox(feature_map_display['child_suicide'], options=list(suicide_options.keys()), format_func=lambda x: suicide_options[x])
+    with col2:
+        child_anxiety = st.selectbox(feature_map_display['child_anxiety'], options=list(symptom_freq_options.keys()), format_func=lambda x: symptom_freq_options[x])
 
-    st.image("shap_force_plot.png")
+    # --- Section 3: Rutter Scale Scores (Rutter量表评分) ---
+    st.subheader("3. Rutter Behavior Questionnaire")
+    col1, col2 = st.columns(2)
+    with col1:
+        rutter_score_a = st.number_input(feature_map_display['rutter_score_a'], min_value=0, max_value=30, value=0, help="Score for Antisocial behavior")
+    with col2:
+        rutter_score_n = st.number_input(feature_map_display['rutter_score_n'], min_value=0, max_value=30, value=0, help="Score for Neurotic behavior")
+
+    # --- Section 4: Physiological & Habits (生理与习惯) ---
+    st.subheader("4. Physiological & Habits")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        # Enuresis / Incontinence
+        urine_enuresis = st.selectbox(feature_map_display['urine_enuresis'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
+        urine_leakage_frequency = st.selectbox(feature_map_display['urine_leakage_frequency'], options=list(incontinence_freq_options.keys()), format_func=lambda x: incontinence_freq_options[x])
+        urine_delayed = st.selectbox(feature_map_display['urine_delayed'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No", help="Holding maneuvers")
+    
+    with col2:
+        # Stool / Constipation
+        stool_stains = st.selectbox(feature_map_display['stool_stains'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
+        stool_constipation = st.selectbox(feature_map_display['stool_constipation'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
+    
+    with col3:
+        # Sleep
+        cshq_daysleep = st.number_input(feature_map_display['cshq_daysleep'], min_value=0, max_value=50, value=8)
+
+    # --- Section 5: Caregiver Info (家长信息) ---
+    st.subheader("5. Caregiver Information")
+    parent_anxiety_degree = st.selectbox(feature_map_display['parent_anxiety_degree'], options=list(parent_anx_options.keys()), format_func=lambda x: parent_anx_options[x])
+
+    # 提交按钮
+    submit_btn = st.form_submit_button("Run Prediction")
+
+# ==========================================
+# 5. 预测与解释逻辑
+# ==========================================
+if submit_btn:
+    # A. 构造 DataFrame (列名必须与训练时完全一致)
+    input_data = pd.DataFrame({
+        'rutter_score_a': [rutter_score_a],
+        'urine_enuresis': [urine_enuresis],
+        'child_suicide': [child_suicide],
+        'rutter_score_n': [rutter_score_n],
+        'child_depression': [child_depression],
+        'parent_anxiety_degree': [parent_anxiety_degree],
+        'child_chinese': [child_chinese],
+        'child_math': [child_math],
+        'stool_stains': [stool_stains],
+        'cshq_daysleep': [cshq_daysleep],
+        'child_relationships': [child_relationships],
+        'urine_leakage_frequency': [urine_leakage_frequency],
+        'urine_delayed': [urine_delayed],
+        'child_anxiety': [child_anxiety],
+        'stool_constipation': [stool_constipation]
+    })
+
+    # 确保列顺序正确
+    input_data = input_data[model_features]
+
+    st.divider()
+    
+    with st.spinner('Calculating risk score...'):
+        try:
+            # 1. 预测
+            prediction_cls = model.predict(input_data)[0]
+            prediction_proba = model.predict_proba(input_data)[0]
+            risk_score = prediction_proba[1] * 100  # ADHD 概率 %
+
+            # 2. 显示结果
+            if risk_score > 50:
+                st.error(f"### High Risk Detected")
+                st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
+                st.write("Recommendation: Clinical evaluation is strongly recommended.")
+            else:
+                st.success(f"### Low Risk Detected")
+                st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
+                st.write("Recommendation: Routine monitoring.")
+
+            # 3. SHAP 解释图
+            st.subheader("Result Interpretation")
+            
+            # 从 Pipeline 提取步骤
+            # 假设结构: [('imputer',...), ('scaler',...), ('model',...)]
+            preprocessor = model[:-1]
+            rf_model = model[-1]
+
+            # 转换数据
+            data_processed = preprocessor.transform(input_data)
+
+            # 计算 SHAP
+            explainer = shap.TreeExplainer(rf_model)
+            shap_vals = explainer.shap_values(data_processed)
+
+            # 兼容不同 SHAP 版本 (Binary classification returns list of 2 arrays)
+            if isinstance(shap_vals, list):
+                shap_val_target = shap_vals[1][0]
+                base_val = explainer.expected_value[1]
+            else:
+                shap_val_target = shap_vals[0]
+                base_val = explainer.expected_value
+
+            # 准备显示用的 DataFrame (把列名换成英文描述)
+            display_df = input_data.rename(columns=feature_map_display)
+            
+            # 绘图
+            st.write("The chart below shows which factors pushed the risk score up (Red) or down (Blue).")
+            shap.force_plot(
+                base_val,
+                shap_val_target,
+                display_df.iloc[0],
+                matplotlib=True,
+                show=False,
+                text_rotation=15
+            )
+            plt.savefig("shap_force_plot.png", bbox_inches='tight', dpi=150)
+            st.image("shap_force_plot.png")
+
+        except Exception as e:
+            st.error(f"Prediction Error: {e}")
+            st.warning("Ensure the input features match the model's training data exactly.")
