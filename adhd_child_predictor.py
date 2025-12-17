@@ -20,7 +20,7 @@ def load_model():
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"无法加载模型文件 '{MODEL_FILE}'，请确认文件是否存在。错误信息: {e}")
+    st.error(f"无法加载模型文件 '{MODEL_FILE}'。请确认文件已上传。错误信息: {e}")
     st.stop()
 
 # ==========================================
@@ -35,7 +35,7 @@ parent_anx_options = {0: 'None (Normal)', 1: 'Mild', 2: 'Moderate', 3: 'Severe'}
 binary_options = {0: 'No', 1: 'Yes'}
 
 # ==========================================
-# 3. 显示名称映射
+# 3. 显示名称映射 (15个特征)
 # ==========================================
 feature_map_display = {
     'child_chinese': 'Chinese language performance',
@@ -125,7 +125,7 @@ if submit_btn:
         'stool_constipation': [stool_constipation]
     })
 
-    # --- 修复 1: 自动特征对齐 ---
+    # --- 1. 自动特征对齐 ---
     try:
         model_features = None
         if hasattr(model, 'steps') and hasattr(model.steps[-1][1], 'feature_names_in_'):
@@ -133,19 +133,20 @@ if submit_btn:
         elif hasattr(model, 'feature_names_in_'):
             model_features = model.feature_names_in_
             
-        if model_features is None: # 兜底列表
+        if model_features is None: 
+            # 兜底：如果模型没保存特征名，用这个固定列表
             model_features = ['rutter_score_a', 'urine_enuresis', 'child_suicide', 'rutter_score_n', 'child_depression', 'parent_anxiety_degree', 'child_chinese', 'child_math', 'stool_stains', 'cshq_daysleep', 'child_relationships', 'urine_leakage_frequency', 'urine_delayed', 'child_anxiety', 'stool_constipation']
         
         input_data = input_data[list(model_features)]
     except Exception as e:
-        st.error(f"特征顺序对齐失败: {e}")
+        st.error(f"特征对齐失败: {e}")
         st.stop()
 
     st.divider()
     
     with st.spinner('Calculating...'):
         try:
-            # 预测
+            # --- 2. 预测 ---
             prediction_proba = model.predict_proba(input_data)[0]
             risk_score = prediction_proba[1] * 100
 
@@ -158,16 +159,17 @@ if submit_btn:
                 st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
                 st.write("Recommendation: Routine monitoring.")
 
-            # --- 修复 2: 极度健壮的 SHAP 处理 ---
+            # --- 3. SHAP 解释 (增强鲁棒性版) ---
             st.subheader("Result Interpretation")
             
             preprocessor = model[:-1]
             rf_model = model[-1]
             data_processed = preprocessor.transform(input_data)
+            
             explainer = shap.TreeExplainer(rf_model)
             shap_vals = explainer.shap_values(data_processed)
 
-            # 步骤 A: 提取目标类的 SHAP 值 (通常是第2个，代表Positive Class)
+            # A. 提取目标类 SHAP
             if isinstance(shap_vals, list):
                 target_shap = shap_vals[1]
                 base_val_raw = explainer.expected_value[1]
@@ -175,24 +177,39 @@ if submit_btn:
                 target_shap = shap_vals
                 base_val_raw = explainer.expected_value
 
-            # 步骤 B: 【核心修复】强制把数组压平成 1维 (解决 matplotlib error)
-            # 无论它是 (1, 15) 还是 (1, 15, 1)，统统变成 (15,)
+            # B. 强制压平
             target_shap = np.array(target_shap).squeeze()
-            if target_shap.ndim > 1: # 如果压平后还是多维(极少见), 强取第一行
-                target_shap = target_shap[0]
-
-            # 步骤 C: 确保 base_value 是纯数字 (解决 float error)
+            if target_shap.ndim > 1: target_shap = target_shap[0]
+            
+            # C. 准备绘图数据 (分离数值和名称)
+            display_df = input_data.rename(columns=feature_map_display)
+            feature_vals = display_df.iloc[0].values
+            feature_names = display_df.columns.tolist()
+            
+            # D. 【关键修复】长度检查与调试
+            len_shap = len(target_shap)
+            len_feat = len(feature_vals)
+            
+            if len_shap != len_feat:
+                st.warning(f"Debug Info: SHAP calculated {len_shap} values, but we have {len_feat} input features.")
+                # 尝试修复：如果只差一点，可能是有额外列，截取对齐
+                min_len = min(len_shap, len_feat)
+                target_shap = target_shap[:min_len]
+                feature_vals = feature_vals[:min_len]
+                feature_names = feature_names[:min_len]
+            
+            # E. 确保 base_value 是 float
             if isinstance(base_val_raw, (np.ndarray, list)):
-                base_val = float(np.array(base_val_raw).item(0)) # 安全取第一个元素
+                base_val = float(np.array(base_val_raw).item(0))
             else:
                 base_val = float(base_val_raw)
 
-            # 绘图
-            display_df = input_data.rename(columns=feature_map_display)
+            # F. 绘图
             shap.force_plot(
                 base_value=base_val,
                 shap_values=target_shap, 
-                features=display_df.iloc[0],
+                features=feature_vals,      # 传纯数值 array
+                feature_names=feature_names, # 传纯名称 list
                 matplotlib=True,
                 show=False,
                 text_rotation=15
@@ -201,5 +218,5 @@ if submit_btn:
             st.image("shap_force_plot.png")
 
         except Exception as e:
-            st.error(f"发生错误: {str(e)}")
-            st.warning("建议检查: 输入特征是否与模型训练时完全一致。")
+            st.error(f"Error: {str(e)}")
+            st.write("建议重新检查 `adhd_full_model.pkl` 的制作过程，确保没有包含多余的特征。")
