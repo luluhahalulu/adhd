@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 # ==========================================
 # 1. 页面配置与模型加载
 # ==========================================
-st.set_page_config(page_title="ADHD Prediction System", layout="centered")
+st.set_page_config(page_title="ADHD Risk Prediction", layout="centered")
 
 # 请确保您的 pkl 文件名为 'adhd_full_model.pkl' 并且与此脚本在同一目录下
 MODEL_FILE = 'adhd_full_model.pkl'
@@ -20,11 +20,11 @@ def load_model():
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"Error loading model: {e}. Please ensure '{MODEL_FILE}' is uploaded.")
+    st.error(f"无法加载模型文件，请确认 '{MODEL_FILE}' 在当前文件夹中。错误信息: {e}")
     st.stop()
 
 # ==========================================
-# 2. 选项映射字典 (严格基于您提供的文档)
+# 2. 选项映射字典 (严格基于您的数据定义)
 # ==========================================
 
 # A. 学业与表现 (1-4)
@@ -100,7 +100,7 @@ feature_map_display = {
 }
 
 # ==========================================
-# 4. 用户输入表单
+# 4. 用户输入表单界面
 # ==========================================
 st.title("ADHD Risk Assessment Tool")
 st.markdown("Please enter the information below based on the clinical assessment.")
@@ -137,18 +137,15 @@ with st.form("adhd_form"):
     st.subheader("4. Physiological & Habits")
     col1, col2, col3 = st.columns(3)
     with col1:
-        # Enuresis / Incontinence
         urine_enuresis = st.selectbox(feature_map_display['urine_enuresis'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
         urine_leakage_frequency = st.selectbox(feature_map_display['urine_leakage_frequency'], options=list(incontinence_freq_options.keys()), format_func=lambda x: incontinence_freq_options[x])
         urine_delayed = st.selectbox(feature_map_display['urine_delayed'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No", help="Holding maneuvers")
     
     with col2:
-        # Stool / Constipation
         stool_stains = st.selectbox(feature_map_display['stool_stains'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
         stool_constipation = st.selectbox(feature_map_display['stool_constipation'], options=[0, 1], format_func=lambda x: "Yes" if x==1 else "No")
     
     with col3:
-        # Sleep
         cshq_daysleep = st.number_input(feature_map_display['cshq_daysleep'], min_value=0, max_value=50, value=8)
 
     # --- Section 5: Caregiver Info (家长信息) ---
@@ -159,10 +156,10 @@ with st.form("adhd_form"):
     submit_btn = st.form_submit_button("Run Prediction")
 
 # ==========================================
-# 5. 预测与解释逻辑
+# 5. 预测与解释逻辑 (核心部分)
 # ==========================================
 if submit_btn:
-    # 1. 构造初始 DataFrame (顺序暂时不重要，下面会自动修复)
+    # 1. 构造初始数据 (顺序暂时不管，下面会自动修复)
     input_data = pd.DataFrame({
         'rutter_score_a': [rutter_score_a],
         'urine_enuresis': [urine_enuresis],
@@ -181,14 +178,14 @@ if submit_btn:
         'stool_constipation': [stool_constipation]
     })
 
-    # ============================================================
-    # 【核心修复】自动获取模型需要的特征顺序并重排
-    # ============================================================
+    # --------------------------------------------------------
+    # 自动对齐：强制让输入列顺序 = 模型训练时的顺序
+    # --------------------------------------------------------
     try:
         model_features = None
         # 尝试从 Pipeline 的最后一步(随机森林)获取特征名
         if hasattr(model, 'steps'):
-             # 通常 Pipeline 的最后一步是 estimator (clf)
+             # 通常 Pipeline 的最后一步是 estimator
              if hasattr(model.steps[-1][1], 'feature_names_in_'):
                  model_features = model.steps[-1][1].feature_names_in_
         
@@ -196,7 +193,7 @@ if submit_btn:
         if model_features is None and hasattr(model, 'feature_names_in_'):
             model_features = model.feature_names_in_
             
-        # 如果还是找不到，使用硬编码的 LASSO 筛选结果顺序 (最后一道防线)
+        # 兜底：如果实在读不出来，使用之前分析出的固定列表
         if model_features is None:
             model_features = [
                 'rutter_score_a', 'urine_enuresis', 'child_suicide', 'rutter_score_n', 
@@ -205,12 +202,11 @@ if submit_btn:
                 'urine_delayed', 'child_anxiety', 'stool_constipation'
             ]
         
-        # 强制按照模型的顺序重排
-        # list(model_features) 确保它是列表格式
+        # 强制按照模型的顺序重排数据
         input_data = input_data[list(model_features)]
         
     except Exception as e:
-        st.error(f"特征对齐失败，请检查模型文件。详细错误: {e}")
+        st.error(f"Feature alignment failed: {e}")
         st.stop()
 
     st.divider()
@@ -218,12 +214,11 @@ if submit_btn:
     with st.spinner('Calculating risk score...'):
         try:
             # 2. 预测
-            # Pipeline 自动处理缺失值和标准化
             prediction_cls = model.predict(input_data)[0]
             prediction_proba = model.predict_proba(input_data)[0]
             risk_score = prediction_proba[1] * 100  # ADHD 概率 %
 
-            # 3. 显示结果
+            # 3. 显示预测结果
             if risk_score > 50:
                 st.error(f"### High Risk Detected")
                 st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
@@ -233,47 +228,50 @@ if submit_btn:
                 st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
                 st.write("Recommendation: Routine monitoring.")
 
-            # 4. SHAP 解释图
+            # 4. SHAP 解释图 (包含您之前的报错修复)
             st.subheader("Result Interpretation")
             
-            # 从 Pipeline 提取步骤
-            # 假设结构: [('imputer',...), ('scaler',...), ('model',...)]
-            # 倒数第一项是模型，前面所有的步骤是预处理
-            preprocessor = model[:-1]
-            rf_model = model[-1]
+            # 提取模型组件
+            preprocessor = model[:-1] # 预处理步骤
+            rf_model = model[-1]      # 随机森林模型
 
-            # 转换数据 (Raw -> Processed)
-            # SHAP 需要吃 "标准化后" 的数据才能和 "标准化后" 训练的模型对齐
+            # 数据转换 (Raw -> Processed)
             data_processed = preprocessor.transform(input_data)
 
             # 计算 SHAP
             explainer = shap.TreeExplainer(rf_model)
             shap_vals = explainer.shap_values(data_processed)
 
-            # 兼容不同 SHAP 版本 (Binary classification returns list of 2 arrays)
+            # 处理返回格式 (列表 vs 数组)
             if isinstance(shap_vals, list):
-                shap_val_target = shap_vals[1][0]
-                base_val = explainer.expected_value[1]
+                shap_val_target = shap_vals[1][0] # 取 Class 1
+                base_val_raw = explainer.expected_value[1]
             else:
                 shap_val_target = shap_vals[0]
-                base_val = explainer.expected_value
+                base_val_raw = explainer.expected_value
 
-            # 准备显示用的 DataFrame (把列名换成英文描述)
+            # 【关键修复】确保基准值是纯数字 float
+            if isinstance(base_val_raw, (np.ndarray, list)):
+                base_val = float(base_val_raw[0])
+            else:
+                base_val = float(base_val_raw)
+
+            # 准备显示用的 DataFrame
             display_df = input_data.rename(columns=feature_map_display)
             
-            # 绘图
-            st.write("The chart below shows which factors pushed the risk score up (Red) or down (Blue).")
+            # 绘图：使用 explicit keyword arguments 防止报错
             shap.force_plot(
-                base_val,
-                shap_val_target,
-                display_df.iloc[0],
+                base_value=base_val,         # 必须是 float
+                shap_values=shap_val_target, # 必须是 array
+                features=display_df.iloc[0], # 显示数据
                 matplotlib=True,
                 show=False,
                 text_rotation=15
             )
+            
             plt.savefig("shap_force_plot.png", bbox_inches='tight', dpi=150)
             st.image("shap_force_plot.png")
 
         except Exception as e:
             st.error(f"Prediction Error: {e}")
-            st.warning("Ensure the input features match the model's training data exactly.")
+            st.warning("Please ensure 'adhd_full_model.pkl' matches the input features exactly.")
