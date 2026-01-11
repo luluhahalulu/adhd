@@ -4,24 +4,32 @@ import pandas as pd
 import numpy as np
 
 # ==========================================
-# 1. 页面配置与模型加载
+# 1. 页面配置与模型包加载 (关键修改)
 # ==========================================
 st.set_page_config(page_title="ADHD Risk Prediction", layout="centered")
 
-MODEL_FILE = 'adhd_full_model.pkl'
+# 修改为你刚刚保存的新文件名
+MODEL_FILE = 'ESPM_ADHD_RandomForest_Final.pkl'
 
 @st.cache_resource
-def load_model():
+def load_model_package():
     return joblib.load(MODEL_FILE)
 
 try:
-    model = load_model()
+    # 加载整个数据包
+    package = load_model_package()
+    
+    # 解包：分别获取模型、阈值和特征列表
+    model = package['pipeline']
+    youden_threshold = package['threshold']
+    feature_names = package['features']
+    
 except Exception as e:
     st.error(f"无法加载模型文件，请确认 '{MODEL_FILE}' 在同一目录下。错误信息: {e}")
     st.stop()
 
 # ==========================================
-# 2. 选项定义 (与您的数据一致)
+# 2. 选项定义 (保持不变)
 # ==========================================
 perf_options = {1: 'Top few (1)', 2: 'Above average (2)', 3: 'Average (3)', 4: 'Below average (4)'}
 rel_options = {1: 'Good (1)', 2: 'Average (2)', 3: 'Poor (3)'}
@@ -41,7 +49,7 @@ feature_map_display = {
     'urine_enuresis': 'Enuresis (Bedwetting)',
     'urine_leakage_frequency': 'Frequency of daytime incontinence',
     'urine_delayed': 'Holding maneuvers (Urinary)', 
-    'stool_stains': 'Encopresis (Stool stains)',                 
+    'stool_stains': 'Encopresis (Stool stains)',                  
     'stool_constipation': 'Functional constipation',
     'cshq_daysleep': 'Daytime sleepiness (CSHQ Score)',
     'rutter_score_a': 'Antisocial behavior score (Rutter A)',
@@ -50,10 +58,11 @@ feature_map_display = {
 }
 
 # ==========================================
-# 3. 用户输入表单
+# 3. 用户输入表单 (保持不变)
 # ==========================================
 st.title("ADHD Risk Assessment Tool")
-st.markdown("Please enter the clinical information below.")
+st.markdown("### Early Screening Prediction Model (ESPM-ADHD)")
+st.info(f"System Status: Model Loaded | Clinical Threshold: {youden_threshold:.3%}") # 显示阈值，增加专业感
 
 with st.form("adhd_form"):
     st.subheader("1. School & Social")
@@ -97,7 +106,7 @@ with st.form("adhd_form"):
     submit_btn = st.form_submit_button("Run Prediction")
 
 # ==========================================
-# 4. 预测逻辑
+# 4. 预测逻辑 (核心修改)
 # ==========================================
 if submit_btn:
     # 1. 构造初始数据
@@ -119,46 +128,38 @@ if submit_btn:
         'stool_constipation': [stool_constipation]
     })
 
-    # 2. 自动特征对齐 (这是必须的，否则会报错)
-    try:
-        model_features = None
-        # 尝试读取模型特征名
-        if hasattr(model, 'steps') and hasattr(model.steps[-1][1], 'feature_names_in_'):
-             model_features = model.steps[-1][1].feature_names_in_
-        elif hasattr(model, 'feature_names_in_'):
-            model_features = model.feature_names_in_
-        
-        # 如果读取不到，使用默认列表兜底
-        if model_features is None:
-            model_features = ['rutter_score_a', 'urine_enuresis', 'child_suicide', 'rutter_score_n', 
-                              'child_depression', 'parent_anxiety_degree', 'child_chinese', 'child_math', 
-                              'stool_stains', 'cshq_daysleep', 'child_relationships', 'urine_leakage_frequency', 
-                              'urine_delayed', 'child_anxiety', 'stool_constipation']
-        
-        # 强制重排
-        input_data = input_data[list(model_features)]
-        
-    except Exception as e:
-        st.error(f"Data alignment error: {e}")
-        st.stop()
-
     st.divider()
     
-    # 3. 运行预测
-    with st.spinner('Calculating...'):
+    with st.spinner('Analyzing...'):
         try:
-            prediction_proba = model.predict_proba(input_data)[0]
-            risk_score = prediction_proba[1] * 100  # 阳性概率
-
-            if risk_score > 50:
-                st.error("### High Risk Detected")
-                st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
-                st.write("Recommendation: Clinical evaluation is strongly recommended.")
+            # 2. 严格按照训练时的特征顺序对齐数据 (直接使用 pickle 里的 list)
+            input_data = input_data[feature_names]
+            
+            # 3. 运行预测
+            # 获取属于"Positive Class (ADHD)"的概率
+            prob = model.predict_proba(input_data)[:, 1][0]
+            
+            # 转换为百分比
+            risk_percent = prob * 100
+            threshold_percent = youden_threshold * 100
+            
+            # 4. 使用 Youden 阈值进行判定 (不再是 hardcode 50%)
+            if prob >= youden_threshold:
+                st.error("### ⚠️ Result: High Risk Detected")
+                st.markdown(f"""
+                **Predicted Probability:** `{risk_percent:.2f}%`  
+                *(Threshold for High Risk: > {threshold_percent:.2f}%)*
+                """)
+                st.warning("**Recommendation:** Based on the ESPM-ADHD model screening criteria, this child shows signs consistent with ADHD risk. **Clinical referral and further diagnostic evaluation are strongly recommended.**")
             else:
-                st.success("### Low Risk Detected")
-                st.write(f"**Predicted Probability of ADHD:** {risk_score:.1f}%")
-                st.write("Recommendation: Routine monitoring.")
+                st.success("### ✅ Result: Low Risk Detected")
+                st.markdown(f"""
+                **Predicted Probability:** `{risk_percent:.2f}%`  
+                *(Threshold for High Risk: > {threshold_percent:.2f}%)*
+                """)
+                st.info("**Recommendation:** No immediate high-risk indicators detected. Routine monitoring and follow-up are suggested.")
                 
+        except KeyError as e:
+            st.error(f"Feature Mismatch Error: Missing feature {e}. Please ensure input data matches the model.")
         except Exception as e:
             st.error(f"Prediction Error: {str(e)}")
-            st.write("请检查输入数据是否完整。")
