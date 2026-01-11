@@ -3,7 +3,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import shap
-from streamlit_shap import st_shap
+import matplotlib.pyplot as plt # [新增] 用于静态绘图
 
 # ==========================================
 # 1. 页面配置与模型包加载
@@ -17,8 +17,7 @@ MODEL_FILE = 'ESPM_ADHD_RandomForest_Final.pkl'
 def load_model_package():
     return joblib.load(MODEL_FILE)
 
-# [关键修复] 初始化 SHAP 解释器
-# 去掉了导致报错的 model_output='probability' 参数
+# 初始化 SHAP 解释器
 # 对于随机森林，默认就是解释概率输出
 @st.cache_resource
 def get_shap_explainer(_estimator):
@@ -122,7 +121,7 @@ with st.form("adhd_form"):
     submit_btn = st.form_submit_button("Run Prediction & Explanation")
 
 # ==========================================
-# 4. 预测逻辑与 SHAP 解释
+# 4. 预测逻辑与 SHAP 解释 (静态图版)
 # ==========================================
 if submit_btn:
     # 1. 构造初始数据
@@ -152,7 +151,6 @@ if submit_btn:
             input_data_sorted = input_data[feature_names]
             
             # 3. 数据转换 (只做预处理，不分类)
-            # 截取 pipeline 的前几步 (Imputer -> Scaler -> SMOTE)
             preprocessor = full_pipeline[:-1] 
             transformed_data = preprocessor.transform(input_data_sorted)
             
@@ -178,7 +176,7 @@ if submit_btn:
                 """)
                 st.info("**Recommendation:** No immediate high-risk indicators detected. Routine monitoring and follow-up are suggested.")
             
-            # 6. SHAP 可视化 (修正了逻辑)
+            # 6. SHAP 可视化 (静态图版)
             st.divider()
             st.subheader("Model Interpretation (Why this result?)")
             st.markdown("The plot below shows how each feature contributed to the risk probability.")
@@ -186,7 +184,7 @@ if submit_btn:
             # 计算 SHAP 值
             shap_values_result = shap_explainer.shap_values(transformed_data)
             
-            # 处理随机森林的输出 (list of arrays)
+            # 处理随机森林的输出
             if isinstance(shap_values_result, list):
                 # 取出正类 (ADHD Class, index 1) 的 SHAP 值
                 shap_values_pos = shap_values_result[1]
@@ -202,16 +200,29 @@ if submit_btn:
             # 准备显示的特征名
             display_feature_names = [feature_map_display.get(f, f) for f in feature_names]
 
-            # 绘制交互式 Force Plot
-            force_plot = shap.force_plot(
-                base_value,                 # 基准值
-                shap_values_pos[0,:],       # 贡献值
-                transformed_data[0,:],      # 特征值
+            # --- [核心修改] 绘制 Matplotlib 静态图 ---
+            # 创建画布
+            plt.figure(figsize=(20, 3), dpi=100)
+            
+            # 绘制 Force Plot (matplotlib=True, show=False)
+            shap.force_plot(
+                base_value,
+                shap_values_pos[0,:],
+                transformed_data[0,:],
                 feature_names=display_feature_names,
-                matplotlib=False            # 交互模式
+                matplotlib=True,
+                show=False,
+                text_rotation=0 # 特征名不旋转，避免重叠
             )
             
-            st_shap(force_plot, height=150)
+            # 在 Streamlit 中显示当前 Matplotlib 图形
+            st.pyplot(plt.gcf(), bbox_inches='tight')
+            
+            # 清除画布，防止下次运行重叠
+            plt.clf()
+            plt.close()
+            # ------------------------------------
+
             st.caption("Note: Red bars push the risk higher; Blue bars push the risk lower.")
 
         except KeyError as e:
