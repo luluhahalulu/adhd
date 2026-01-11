@@ -19,6 +19,7 @@ def load_model_package():
 # 初始化 SHAP 解释器
 @st.cache_resource
 def get_shap_explainer(_estimator):
+    # TreeExplainer 直接初始化即可
     return shap.TreeExplainer(_estimator)
 
 try:
@@ -118,7 +119,7 @@ with st.form("adhd_form"):
     submit_btn = st.form_submit_button("Run Prediction & Explanation")
 
 # ==========================================
-# 4. 预测逻辑与 SHAP 解释
+# 4. 预测逻辑与 SHAP 解释 (升级为 Waterfall 图)
 # ==========================================
 if submit_btn:
     # 1. 构造初始数据
@@ -147,20 +148,17 @@ if submit_btn:
             # 2. 特征对齐
             input_data_sorted = input_data[feature_names]
             
-            # --- [核心修复] 手动分步预处理，跳过 SMOTE ---
-            # 直接提取 Imputer 和 Scaler，显式调用 transform
+            # 3. 分步预处理 (跳过 SMOTE)
             step_imputer = full_pipeline.named_steps['imputer']
             step_scaler = full_pipeline.named_steps['scaler']
             
-            # 分步转换
             data_imputed = step_imputer.transform(input_data_sorted)
             transformed_data = step_scaler.transform(data_imputed)
-            # -----------------------------------------------
             
-            # 3. 预测概率 (直接用 Pipeline 预测是安全的，因为它内部知道要跳过 SMOTE)
+            # 4. 预测概率
             prob = full_pipeline.predict_proba(input_data_sorted)[:, 1][0]
             
-            # 4. 结果判定
+            # 5. 结果判定
             risk_percent = prob * 100
             threshold_percent = youden_threshold * 100
             
@@ -179,49 +177,50 @@ if submit_btn:
                 """)
                 st.info("**Recommendation:** No immediate high-risk indicators detected. Routine monitoring and follow-up are suggested.")
             
-            # 5. SHAP 可视化 (静态图版)
+            # ------------------------------------------------------------------
+            # [核心修复] SHAP 可视化升级：使用 Waterfall Plot (瀑布图)
+            # 这种图表不仅不会报错，而且解释性更强，非常适合论文发表
+            # ------------------------------------------------------------------
             st.divider()
-            st.subheader("Model Interpretation (Why this result?)")
-            st.markdown("The plot below shows how each feature contributed to the risk probability.")
+            st.subheader("Model Interpretation (SHAP Waterfall Plot)")
+            st.markdown("The chart below details how each factor drives the risk score from the average (E[f(x)]) to the final prediction (f(x)).")
             
-            # 计算 SHAP 值
-            shap_values_result = shap_explainer.shap_values(transformed_data)
+            # 1. 使用 explainer 直接调用，获取 Explanation 对象
+            # 这比 .shap_values() 更现代，包含更多元数据
+            shap_object = shap_explainer(transformed_data)
             
-            # 处理随机森林的输出
-            if isinstance(shap_values_result, list):
-                shap_values_pos = shap_values_result[1]
-                base_value = shap_explainer.expected_value[1]
+            # 2. 提取正类 (High Risk / Class 1) 的解释对象
+            # 对于二分类，shap_object.values 形状通常是 (1, n_features, 2)
+            if len(shap_object.values.shape) == 3:
+                # 取出: 第0个样本, 所有特征, 第1个类别(ADHD)
+                shap_explanation = shap_object[0, :, 1]
             else:
-                shap_values_pos = shap_values_result
-                if isinstance(shap_explainer.expected_value, (list, np.ndarray)):
-                    base_value = shap_explainer.expected_value[0]
-                else:
-                    base_value = shap_explainer.expected_value
+                # 兼容旧版本或特殊情况
+                shap_explanation = shap_object[0]
 
-            display_feature_names = [feature_map_display.get(f, f) for f in feature_names]
-
-            # 绘制 Matplotlib 静态图
-            plt.figure(figsize=(20, 3), dpi=100)
-            shap.force_plot(
-                base_value,
-                shap_values_pos[0,:],
-                transformed_data[0,:],
-                feature_names=display_feature_names,
-                matplotlib=True,
-                show=False,
-                text_rotation=0
-            )
+            # 3. 赋予友好的特征名称 (用于图表显示)
+            display_names = [feature_map_display.get(f, f) for f in feature_names]
+            shap_explanation.feature_names = display_names
             
-            st.pyplot(plt.gcf(), bbox_inches='tight')
+            # 4. 绘制 Waterfall Plot
+            # 创建画布
+            fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
+            
+            # 绘制 (show=False 允许我们在 Streamlit 中手动渲染)
+            shap.plots.waterfall(shap_explanation, show=False, max_display=10)
+            
+            # 渲染到 Streamlit
+            st.pyplot(fig, bbox_inches='tight')
+            
+            # 清理
             plt.clf()
             plt.close()
 
-            st.caption("Note: Red bars push the risk higher; Blue bars push the risk lower.")
+            st.caption("Interpretation: The bottom value E[f(x)] is the average risk. Red bars push the risk up; Blue bars pull it down. The top value f(x) is the final predicted risk score.")
 
         except KeyError as e:
             st.error(f"Feature Mismatch Error: Missing feature {e}. Please ensure input data matches the model.")
         except Exception as e:
-            # [修复] 使用标准错误输出，不再调用 st.details
             st.error(f"An error occurred: {e}")
             import traceback
             st.code(traceback.format_exc())
